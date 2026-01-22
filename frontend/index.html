@@ -559,13 +559,17 @@
                     updateCoordDisplay(`Bounding Box:\nN: ${currentBounds.north.toFixed(6)}\nS: ${currentBounds.south.toFixed(6)}\nE: ${currentBounds.east.toFixed(6)}\nW: ${currentBounds.west.toFixed(6)}`);
                 } else if (event.layerType === 'polygon') {
                     const latlngs = layer.getLatLngs()[0];
-                    currentPolygon = latlngs.map(ll => [ll.lng, ll.lat]);
-                    // Close the polygon
-                    if (currentPolygon.length > 0) {
-                        currentPolygon.push(currentPolygon[0]);
-                    }
-                    currentBounds = null;
-                    updateCoordDisplay(`Polygon with ${latlngs.length} vertices`);
+                    // Convert polygon to bounding box for more reliable processing
+                    // (avoids Shapely polygon validation issues)
+                    const bounds = layer.getBounds();
+                    currentBounds = {
+                        north: bounds.getNorth(),
+                        south: bounds.getSouth(),
+                        east: bounds.getEast(),
+                        west: bounds.getWest()
+                    };
+                    currentPolygon = null;
+                    updateCoordDisplay(`Area from polygon (${latlngs.length} vertices):\nN: ${currentBounds.north.toFixed(6)}\nS: ${currentBounds.south.toFixed(6)}\nE: ${currentBounds.east.toFixed(6)}\nW: ${currentBounds.west.toFixed(6)}`);
                 }
 
                 // Enable generate button

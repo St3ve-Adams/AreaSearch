@@ -86,15 +86,27 @@ def download_street_network(bbox: BoundingBox) -> nx.MultiDiGraph:
     Returns:
         NetworkX MultiDiGraph representing the street network
     """
-    logger.info(f"Downloading street network for bbox: {bbox}")
+    logger.info(f"Downloading street network for bbox: N={bbox.north}, S={bbox.south}, E={bbox.east}, W={bbox.west}")
+
+    # Validate bounding box
+    if bbox.north <= bbox.south:
+        raise HTTPException(status_code=400, detail="Invalid bounding box: north must be greater than south")
+    if bbox.east <= bbox.west:
+        raise HTTPException(status_code=400, detail="Invalid bounding box: east must be greater than west")
+
+    # Check if area is too small
+    width = bbox.east - bbox.west
+    height = bbox.north - bbox.south
+    logger.info(f"Bounding box size: {width:.6f} x {height:.6f} degrees")
+
+    if width < 0.0001 or height < 0.0001:
+        raise HTTPException(status_code=400, detail="Selected area is too small. Please draw a larger area.")
 
     try:
         # Download the drive network using osmnx
+        # Note: osmnx 1.x uses bbox parameter as tuple (north, south, east, west)
         G = ox.graph_from_bbox(
-            north=bbox.north,
-            south=bbox.south,
-            east=bbox.east,
-            west=bbox.west,
+            bbox=(bbox.north, bbox.south, bbox.east, bbox.west),
             network_type='drive',
             simplify=True,
             truncate_by_edge=True
@@ -104,8 +116,11 @@ def download_street_network(bbox: BoundingBox) -> nx.MultiDiGraph:
         return G
 
     except Exception as e:
-        logger.error(f"Error downloading street network: {e}")
-        raise HTTPException(status_code=400, detail=f"Could not download street network: {str(e)}")
+        logger.error(f"Error downloading street network: {e}", exc_info=True)
+        error_msg = str(e)
+        if "empty" in error_msg.lower() or "no data" in error_msg.lower():
+            raise HTTPException(status_code=400, detail="No roads found in the selected area. Try selecting a larger area with streets.")
+        raise HTTPException(status_code=400, detail=f"Could not download street network: {error_msg}")
 
 
 def download_street_network_polygon(coordinates: List[List[float]]) -> nx.MultiDiGraph:
@@ -119,13 +134,44 @@ def download_street_network_polygon(coordinates: List[List[float]]) -> nx.MultiD
         NetworkX MultiDiGraph representing the street network
     """
     logger.info(f"Downloading street network for polygon with {len(coordinates)} vertices")
+    logger.info(f"Polygon coordinates: {coordinates[:3]}...")  # Log first few coords
 
     try:
-        # Convert to shapely polygon (osmnx expects (lat, lng) but we receive (lng, lat))
-        from shapely.geometry import Polygon
-        # Flip coordinates from [lng, lat] to (lat, lng) for shapely
-        polygon_coords = [(coord[1], coord[0]) for coord in coordinates]
+        from shapely.geometry import Polygon, box
+        from shapely.validation import make_valid
+
+        # Validate we have enough points
+        if len(coordinates) < 3:
+            raise HTTPException(status_code=400, detail="Polygon must have at least 3 vertices")
+
+        # Shapely expects (x, y) = (longitude, latitude) format
+        # Frontend sends [lng, lat] which is correct
+        polygon_coords = [(coord[0], coord[1]) for coord in coordinates]
+
+        # Ensure polygon is closed
+        if polygon_coords[0] != polygon_coords[-1]:
+            polygon_coords.append(polygon_coords[0])
+
+        logger.info(f"Creating polygon with {len(polygon_coords)} points")
+
         polygon = Polygon(polygon_coords)
+
+        # Validate and fix polygon if needed
+        if not polygon.is_valid:
+            logger.warning("Polygon is invalid, attempting to fix...")
+            polygon = make_valid(polygon)
+
+        if polygon.is_empty:
+            raise HTTPException(status_code=400, detail="Polygon is empty or invalid")
+
+        # Check polygon area (rough check - if too small, may have no roads)
+        bounds = polygon.bounds  # (minx, miny, maxx, maxy)
+        width = bounds[2] - bounds[0]
+        height = bounds[3] - bounds[1]
+        logger.info(f"Polygon bounds: {bounds}, size: {width:.6f} x {height:.6f} degrees")
+
+        if width < 0.0001 or height < 0.0001:
+            raise HTTPException(status_code=400, detail="Selected area is too small. Please draw a larger area.")
 
         # Download the drive network using osmnx
         G = ox.graph_from_polygon(
@@ -138,9 +184,14 @@ def download_street_network_polygon(coordinates: List[List[float]]) -> nx.MultiD
         logger.info(f"Downloaded graph with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
         return G
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error downloading street network: {e}")
-        raise HTTPException(status_code=400, detail=f"Could not download street network: {str(e)}")
+        logger.error(f"Error downloading street network: {e}", exc_info=True)
+        error_msg = str(e)
+        if "empty" in error_msg.lower():
+            raise HTTPException(status_code=400, detail="No roads found in the selected area. Try selecting a larger area with streets.")
+        raise HTTPException(status_code=400, detail=f"Could not download street network: {error_msg}")
 
 
 def convert_to_undirected_weighted(G: nx.MultiDiGraph) -> nx.MultiGraph:
@@ -594,6 +645,15 @@ async def root():
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "service": "AreaSearch API"}
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Return empty favicon to prevent 404 errors."""
+    from fastapi.responses import Response
+    # Return a simple 1x1 transparent PNG
+    favicon_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+    return Response(content=favicon_data, media_type="image/png")
 
 
 @app.post("/generate-route", response_model=RouteResponse)
