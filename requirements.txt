@@ -1,0 +1,20 @@
+# AreaSearch - Missing Persons Search Route Generator
+# Python Dependencies
+
+# Web Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Geospatial Libraries
+osmnx>=1.7.0
+networkx>=3.2
+shapely>=2.0.0
+
+# Data Processing
+numpy>=1.24.0
+
+# API Models
+pydantic>=2.5.0
+
+# HTTP Client (for osmnx)
+requests>=2.31.0

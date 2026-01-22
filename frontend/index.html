@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AreaSearch - Missing Persons Search Route Generator</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
+
+    <!-- Leaflet Draw CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background-color: #1a1a2e;
+            color: #eaeaea;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
+            padding: 15px 20px;
+            border-bottom: 2px solid #e94560;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: #e94560;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .subtitle {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #e94560;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #ff6b6b;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: #16213e;
+            color: #eaeaea;
+            border: 1px solid #333;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #1f2b46;
+        }
+
+        .btn-success {
+            background: #00d26a;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #00e676;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            position: relative;
+        }
+
+        #map {
+            flex: 1;
+            z-index: 1;
+        }
+
+        .sidebar {
+            width: 350px;
+            background: #16213e;
+            border-left: 1px solid #333;
+            padding: 20px;
+            overflow-y: auto;
+            z-index: 10;
+        }
+
+        .panel {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .panel h3 {
+            font-size: 0.9rem;
+            color: #e94560;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background: #16213e;
+            border-radius: 6px;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #00d26a;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        .instructions {
+            font-size: 0.85rem;
+            color: #aaa;
+            line-height: 1.6;
+        }
+
+        .instructions ol {
+            padding-left: 20px;
+        }
+
+        .instructions li {
+            margin-bottom: 8px;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(26, 26, 46, 0.95);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid #333;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 1.1rem;
+            color: #eaeaea;
+        }
+
+        .loading-subtext {
+            font-size: 0.9rem;
+            color: #888;
+        }
+
+        .notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            z-index: 1001;
+            max-width: 400px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .notification.success {
+            background: #00d26a;
+            color: white;
+        }
+
+        .notification.error {
+            background: #e94560;
+            color: white;
+        }
+
+        .notification.info {
+            background: #3498db;
+            color: white;
+        }
+
+        .help-text {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 8px;
+        }
+
+        .divider {
+            height: 1px;
+            background: #333;
+            margin: 15px 0;
+        }
+
+        .coord-display {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.8rem;
+            background: #0d0d1a;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            word-break: break-all;
+        }
+
+        .warning-banner {
+            background: #f39c12;
+            color: #1a1a2e;
+            padding: 8px 15px;
+            font-size: 0.85rem;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .route-info {
+            display: none;
+        }
+
+        .route-info.active {
+            display: block;
+        }
+
+        /* Leaflet customizations */
+        .leaflet-control-zoom {
+            border: none !important;
+        }
+
+        .leaflet-control-zoom a {
+            background: #16213e !important;
+            color: #eaeaea !important;
+            border: 1px solid #333 !important;
+        }
+
+        .leaflet-control-zoom a:hover {
+            background: #1f2b46 !important;
+        }
+
+        .leaflet-draw-toolbar a {
+            background: #16213e !important;
+            border: 1px solid #333 !important;
+        }
+
+        /* Responsive design */
+        @media (max-width: 900px) {
+            main {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                max-height: 40vh;
+                border-left: none;
+                border-top: 1px solid #333;
+            }
+        }
+
+        @media (max-width: 600px) {
+            header {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .controls {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="warning-banner">
+        Safety Notice: Always search with a partner. Driver watches the road - passenger navigates.
+    </div>
+
+    <header>
+        <div class="logo">
+            <div class="logo-icon">AS</div>
+            <div>
+                <h1>AreaSearch</h1>
+                <div class="subtitle">Missing Persons Search Route Generator</div>
+            </div>
+        </div>
+        <div class="controls">
+            <button id="clearBtn" class="btn-secondary">
+                <span>Clear</span>
+            </button>
+            <button id="generateBtn" class="btn-primary" disabled>
+                <span>Plan Route</span>
+            </button>
+            <button id="exportBtn" class="btn-success" disabled>
+                <span>Export GPX</span>
+            </button>
+        </div>
+    </header>
+
+    <main>
+        <div id="map"></div>
+
+        <div class="sidebar">
+            <div class="panel">
+                <h3>Instructions</h3>
+                <div class="instructions">
+                    <ol>
+                        <li>Use the <strong>rectangle</strong> or <strong>polygon</strong> tool on the map to draw your search area</li>
+                        <li>Click <strong>"Plan Route"</strong> to generate the optimal search path</li>
+                        <li>The route will cover every street with minimal backtracking</li>
+                        <li><strong>Export</strong> the route as GPX for your GPS device</li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="panel" id="areaPanel" style="display: none;">
+                <h3>Selected Area</h3>
+                <div class="coord-display" id="coordDisplay"></div>
+                <div class="help-text">Area selected and ready for route generation</div>
+            </div>
+
+            <div class="panel route-info" id="routeInfo">
+                <h3>Route Statistics</h3>
+                <div class="stat-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="statDistance">--</div>
+                        <div class="stat-label">Total Distance (km)</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statStreets">--</div>
+                        <div class="stat-label">Street Segments</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statNodes">--</div>
+                        <div class="stat-label">Intersections</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statDuplicates">--</div>
+                        <div class="stat-label">Repeat Segments</div>
+                    </div>
+                </div>
+                <div class="divider"></div>
+                <div class="help-text">
+                    <strong>Repeat Segments:</strong> Streets that must be driven twice due to the road network layout. This is mathematically minimized.
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>About</h3>
+                <div class="instructions">
+                    <p>This app uses the <strong>Chinese Postman Algorithm</strong> to create routes that cover every street in an area exactly once (or with minimum repetition when mathematically necessary).</p>
+                    <br>
+                    <p>Perfect for systematic area searches, delivery route planning, or street-by-street surveys.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text">Generating Search Route...</div>
+        <div class="loading-subtext" id="loadingSubtext">Downloading street network from OpenStreetMap</div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+
+    <!-- Leaflet Draw JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = window.location.origin;
+
+        // State
+        let map;
+        let drawnItems;
+        let routeLayer;
+        let currentBounds = null;
+        let currentPolygon = null;
+        let currentRoute = null;
+
+        // Initialize the map
+        function initMap() {
+            // Create map centered on a default location (can be changed)
+            map = L.map('map', {
+                center: [40.7128, -74.0060], // New York City
+                zoom: 14,
+                zoomControl: true
+            });
+
+            // Add dark-themed tile layer
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 20
+            }).addTo(map);
+
+            // Initialize the FeatureGroup to store drawn items
+            drawnItems = new L.FeatureGroup();
+            map.addLayer(drawnItems);
+
+            // Initialize route layer
+            routeLayer = new L.FeatureGroup();
+            map.addLayer(routeLayer);
+
+            // Add drawing controls
+            const drawControl = new L.Control.Draw({
+                position: 'topleft',
+                draw: {
+                    polyline: false,
+                    circle: false,
+                    circlemarker: false,
+                    marker: false,
+                    polygon: {
+                        allowIntersection: false,
+                        drawError: {
+                            color: '#e94560',
+                            message: 'Polygon edges cannot cross!'
+                        },
+                        shapeOptions: {
+                            color: '#e94560',
+                            fillColor: '#e94560',
+                            fillOpacity: 0.2,
+                            weight: 2
+                        }
+                    },
+                    rectangle: {
+                        shapeOptions: {
+                            color: '#e94560',
+                            fillColor: '#e94560',
+                            fillOpacity: 0.2,
+                            weight: 2
+                        }
+                    }
+                },
+                edit: {
+                    featureGroup: drawnItems,
+                    remove: true
+                }
+            });
+            map.addControl(drawControl);
+
+            // Handle drawing events
+            map.on(L.Draw.Event.CREATED, function(event) {
+                const layer = event.layer;
+
+                // Clear previous drawings
+                drawnItems.clearLayers();
+                routeLayer.clearLayers();
+                currentRoute = null;
+
+                // Add new layer
+                drawnItems.addLayer(layer);
+
+                // Extract coordinates
+                if (event.layerType === 'rectangle') {
+                    const bounds = layer.getBounds();
+                    currentBounds = {
+                        north: bounds.getNorth(),
+                        south: bounds.getSouth(),
+                        east: bounds.getEast(),
+                        west: bounds.getWest()
+                    };
+                    currentPolygon = null;
+                    updateCoordDisplay(`Bounding Box:\nN: ${currentBounds.north.toFixed(6)}\nS: ${currentBounds.south.toFixed(6)}\nE: ${currentBounds.east.toFixed(6)}\nW: ${currentBounds.west.toFixed(6)}`);
+                } else if (event.layerType === 'polygon') {
+                    const latlngs = layer.getLatLngs()[0];
+                    currentPolygon = latlngs.map(ll => [ll.lng, ll.lat]);
+                    // Close the polygon
+                    if (currentPolygon.length > 0) {
+                        currentPolygon.push(currentPolygon[0]);
+                    }
+                    currentBounds = null;
+                    updateCoordDisplay(`Polygon with ${latlngs.length} vertices`);
+                }
+
+                // Enable generate button
+                document.getElementById('generateBtn').disabled = false;
+                document.getElementById('areaPanel').style.display = 'block';
+
+                // Hide route info
+                document.getElementById('routeInfo').classList.remove('active');
+                document.getElementById('exportBtn').disabled = true;
+            });
+
+            map.on(L.Draw.Event.DELETED, function(event) {
+                currentBounds = null;
+                currentPolygon = null;
+                currentRoute = null;
+                document.getElementById('generateBtn').disabled = true;
+                document.getElementById('exportBtn').disabled = true;
+                document.getElementById('areaPanel').style.display = 'none';
+                document.getElementById('routeInfo').classList.remove('active');
+                routeLayer.clearLayers();
+            });
+
+            // Try to get user's location
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        map.setView([position.coords.latitude, position.coords.longitude], 15);
+                        showNotification('Map centered on your location', 'info');
+                    },
+                    function(error) {
+                        console.log('Geolocation error:', error);
+                    }
+                );
+            }
+        }
+
+        // Update coordinate display
+        function updateCoordDisplay(text) {
+            document.getElementById('coordDisplay').textContent = text;
+        }
+
+        // Show notification
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 4000);
+        }
+
+        // Show/hide loading overlay
+        function setLoading(loading, message = '') {
+            const overlay = document.getElementById('loadingOverlay');
+            const subtext = document.getElementById('loadingSubtext');
+
+            if (loading) {
+                overlay.classList.add('active');
+                if (message) {
+                    subtext.textContent = message;
+                }
+            } else {
+                overlay.classList.remove('active');
+            }
+        }
+
+        // Update loading message
+        function updateLoadingMessage(message) {
+            document.getElementById('loadingSubtext').textContent = message;
+        }
+
+        // Generate route
+        async function generateRoute() {
+            if (!currentBounds && !currentPolygon) {
+                showNotification('Please draw a search area first', 'error');
+                return;
+            }
+
+            setLoading(true, 'Downloading street network from OpenStreetMap...');
+
+            try {
+                const requestBody = {};
+                if (currentBounds) {
+                    requestBody.bbox = currentBounds;
+                } else if (currentPolygon) {
+                    requestBody.polygon = { coordinates: currentPolygon };
+                }
+
+                // Update loading message
+                setTimeout(() => updateLoadingMessage('Analyzing road network structure...'), 2000);
+                setTimeout(() => updateLoadingMessage('Solving Chinese Postman Problem...'), 4000);
+                setTimeout(() => updateLoadingMessage('Optimizing route for minimal backtracking...'), 6000);
+
+                const response = await fetch(`${API_BASE_URL}/generate-route`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to generate route');
+                }
+
+                if (!data.success) {
+                    throw new Error(data.message || 'Route generation failed');
+                }
+
+                // Store route data
+                currentRoute = data;
+
+                // Display the route
+                displayRoute(data);
+
+                // Update statistics
+                updateStatistics(data);
+
+                showNotification(`Route generated! ${data.total_distance_km} km covering ${data.num_streets} streets`, 'success');
+
+            } catch (error) {
+                console.error('Error generating route:', error);
+                showNotification(error.message || 'Failed to generate route', 'error');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Display route on map
+        function displayRoute(data) {
+            routeLayer.clearLayers();
+
+            if (data.route && data.route.length > 0) {
+                // Convert [lng, lat] to [lat, lng] for Leaflet
+                const latlngs = data.route.map(coord => [coord[1], coord[0]]);
+
+                // Create a gradient effect by splitting the route into segments
+                const totalPoints = latlngs.length;
+                const segmentSize = Math.max(1, Math.floor(totalPoints / 100));
+
+                // Draw the main route line
+                const routeLine = L.polyline(latlngs, {
+                    color: '#00d26a',
+                    weight: 4,
+                    opacity: 0.8,
+                    lineJoin: 'round'
+                });
+
+                routeLayer.addLayer(routeLine);
+
+                // Add start marker
+                const startIcon = L.divIcon({
+                    html: '<div style="background: #00d26a; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">S</div>',
+                    className: 'start-marker',
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
+                });
+
+                const endIcon = L.divIcon({
+                    html: '<div style="background: #e94560; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">E</div>',
+                    className: 'end-marker',
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
+                });
+
+                L.marker(latlngs[0], { icon: startIcon }).addTo(routeLayer);
+                L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).addTo(routeLayer);
+
+                // Fit map to route
+                map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+
+                // Enable export button
+                document.getElementById('exportBtn').disabled = false;
+            }
+        }
+
+        // Update statistics display
+        function updateStatistics(data) {
+            document.getElementById('statDistance').textContent = data.total_distance_km || '--';
+            document.getElementById('statStreets').textContent = data.num_streets || '--';
+            document.getElementById('statNodes').textContent = data.num_nodes || '--';
+            document.getElementById('statDuplicates').textContent = data.duplicated_edges || '0';
+
+            document.getElementById('routeInfo').classList.add('active');
+        }
+
+        // Clear everything
+        function clearAll() {
+            drawnItems.clearLayers();
+            routeLayer.clearLayers();
+            currentBounds = null;
+            currentPolygon = null;
+            currentRoute = null;
+
+            document.getElementById('generateBtn').disabled = true;
+            document.getElementById('exportBtn').disabled = true;
+            document.getElementById('areaPanel').style.display = 'none';
+            document.getElementById('routeInfo').classList.remove('active');
+
+            showNotification('Cleared all drawings and routes', 'info');
+        }
+
+        // Export route as GPX
+        function exportGPX() {
+            if (!currentRoute || !currentRoute.route) {
+                showNotification('No route to export', 'error');
+                return;
+            }
+
+            const route = currentRoute.route;
+            const timestamp = new Date().toISOString();
+
+            let gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="AreaSearch - Missing Persons Search Route Generator"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>AreaSearch Route</name>
+    <desc>Search route generated using Chinese Postman Algorithm. Total distance: ${currentRoute.total_distance_km} km, Streets covered: ${currentRoute.num_streets}</desc>
+    <time>${timestamp}</time>
+  </metadata>
+  <trk>
+    <name>Search Route</name>
+    <desc>Complete area coverage route</desc>
+    <trkseg>
+`;
+
+            route.forEach(coord => {
+                gpx += `      <trkpt lat="${coord[1]}" lon="${coord[0]}"></trkpt>\n`;
+            });
+
+            gpx += `    </trkseg>
+  </trk>
+</gpx>`;
+
+            // Download the file
+            const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `areasearch_route_${new Date().toISOString().slice(0,10)}.gpx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showNotification('Route exported as GPX file', 'success');
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap();
+
+            document.getElementById('generateBtn').addEventListener('click', generateRoute);
+            document.getElementById('clearBtn').addEventListener('click', clearAll);
+            document.getElementById('exportBtn').addEventListener('click', exportGPX);
+        });
+    </script>
+</body>
+</html>
