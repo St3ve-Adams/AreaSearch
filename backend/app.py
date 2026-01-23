@@ -64,6 +64,15 @@ class RouteRequest(BaseModel):
     polygon: Optional[PolygonArea] = None
 
 
+class DirectionStep(BaseModel):
+    """A single direction step."""
+    instruction: str
+    street_name: str
+    distance_m: float
+    coordinates: List[List[float]]  # Segment coordinates
+    segment_id: int
+
+
 class RouteResponse(BaseModel):
     """Response model containing the generated route."""
     success: bool
@@ -74,6 +83,8 @@ class RouteResponse(BaseModel):
     num_nodes: Optional[int] = None
     duplicated_edges: Optional[int] = None
     geojson: Optional[Dict[str, Any]] = None
+    directions: Optional[List[DirectionStep]] = None  # Turn-by-turn directions
+    segments: Optional[List[Dict[str, Any]]] = None  # Individual street segments for tracking
 
 
 def download_street_network(bbox: BoundingBox) -> nx.MultiDiGraph:
@@ -536,6 +547,134 @@ def coordinates_to_geojson(coordinates: List[List[float]]) -> Dict[str, Any]:
     }
 
 
+def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate bearing between two points in degrees."""
+    import math
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlon = lon2 - lon1
+    x = math.sin(dlon) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    bearing = math.degrees(math.atan2(x, y))
+    return (bearing + 360) % 360
+
+
+def get_turn_instruction(prev_bearing: float, curr_bearing: float) -> str:
+    """Determine turn instruction based on bearing change."""
+    diff = (curr_bearing - prev_bearing + 360) % 360
+    if diff < 20 or diff > 340:
+        return "Continue straight"
+    elif 20 <= diff < 70:
+        return "Bear right"
+    elif 70 <= diff < 110:
+        return "Turn right"
+    elif 110 <= diff < 160:
+        return "Sharp right"
+    elif 160 <= diff < 200:
+        return "U-turn"
+    elif 200 <= diff < 250:
+        return "Sharp left"
+    elif 250 <= diff < 290:
+        return "Turn left"
+    else:
+        return "Bear left"
+
+
+def generate_directions(G: nx.MultiGraph, circuit: List[Tuple[int, int, int]]) -> Tuple[List[Dict], List[Dict]]:
+    """
+    Generate turn-by-turn directions and segments from the Eulerian circuit.
+
+    Args:
+        G: The graph with node coordinates and edge attributes
+        circuit: List of edges (u, v, key) in the circuit
+
+    Returns:
+        Tuple of (directions list, segments list)
+    """
+    logger.info("Generating turn-by-turn directions...")
+
+    directions = []
+    segments = []
+    prev_bearing = None
+    prev_street = None
+    segment_id = 0
+
+    for i, (u, v, key) in enumerate(circuit):
+        edge_data = G.get_edge_data(u, v, key)
+        if not edge_data:
+            continue
+
+        # Get street name
+        street_name = edge_data.get('name', 'Unknown Road')
+        if isinstance(street_name, list):
+            street_name = street_name[0] if street_name else 'Unknown Road'
+
+        # Get distance
+        distance = edge_data.get('length', 0)
+
+        # Get coordinates for this segment
+        u_data = G.nodes[u]
+        v_data = G.nodes[v]
+
+        if edge_data.get('geometry'):
+            geom = edge_data['geometry']
+            coords = list(geom.coords)
+            u_coord = (u_data['x'], u_data['y'])
+            # Check if we need to reverse
+            dist_to_start = ((coords[0][0] - u_coord[0])**2 + (coords[0][1] - u_coord[1])**2)
+            dist_to_end = ((coords[-1][0] - u_coord[0])**2 + (coords[-1][1] - u_coord[1])**2)
+            if dist_to_end < dist_to_start:
+                coords = coords[::-1]
+            segment_coords = [[c[0], c[1]] for c in coords]
+        else:
+            segment_coords = [[u_data['x'], u_data['y']], [v_data['x'], v_data['y']]]
+
+        # Calculate bearing for turn instruction
+        start_lat, start_lon = segment_coords[0][1], segment_coords[0][0]
+        end_lat, end_lon = segment_coords[-1][1], segment_coords[-1][0]
+        curr_bearing = calculate_bearing(start_lat, start_lon, end_lat, end_lon)
+
+        # Determine turn instruction
+        if prev_bearing is None:
+            instruction = f"Start on {street_name}"
+        elif street_name != prev_street:
+            turn = get_turn_instruction(prev_bearing, curr_bearing)
+            instruction = f"{turn} onto {street_name}"
+        else:
+            instruction = f"Continue on {street_name}"
+
+        # Create segment for tracking
+        segment = {
+            'id': segment_id,
+            'street_name': street_name,
+            'distance_m': distance,
+            'coordinates': segment_coords,
+            'searched': False
+        }
+        segments.append(segment)
+
+        # Add direction step (consolidate consecutive same-street segments)
+        if directions and street_name == prev_street:
+            # Extend previous direction
+            directions[-1]['distance_m'] += distance
+            directions[-1]['coordinates'].extend(segment_coords[1:])  # Skip first point to avoid duplicates
+        else:
+            direction = {
+                'instruction': instruction,
+                'street_name': street_name,
+                'distance_m': distance,
+                'coordinates': segment_coords,
+                'segment_id': segment_id
+            }
+            directions.append(direction)
+
+        prev_bearing = curr_bearing
+        prev_street = street_name
+        segment_id += 1
+
+    logger.info(f"Generated {len(directions)} direction steps and {len(segments)} segments")
+    return directions, segments
+
+
 def calculate_total_distance(G: nx.MultiGraph, circuit: List[Tuple[int, int, int]]) -> float:
     """
     Calculate total distance of the route in kilometers.
@@ -609,7 +748,10 @@ def generate_chinese_postman_route(bbox: Optional[BoundingBox] = None,
         # Step 7: Calculate statistics
         total_distance = calculate_total_distance(H_euler, circuit)
 
-        # Step 8: Create GeoJSON
+        # Step 8: Generate directions and segments
+        directions, segments = generate_directions(H_euler, circuit)
+
+        # Step 9: Create GeoJSON
         geojson = coordinates_to_geojson(coordinates)
 
         return RouteResponse(
@@ -620,7 +762,9 @@ def generate_chinese_postman_route(bbox: Optional[BoundingBox] = None,
             num_streets=original_edges,
             num_nodes=original_nodes,
             duplicated_edges=edges_added,
-            geojson=geojson
+            geojson=geojson,
+            directions=directions,
+            segments=segments
         )
 
     except HTTPException:
