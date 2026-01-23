@@ -43,7 +43,9 @@ logs/
 
 # Cache
 .cache/
+cache/
 osmnx_cache/
+osmnx/
 
 # Environment variables
 .env
