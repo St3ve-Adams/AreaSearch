@@ -113,6 +113,18 @@ def download_street_network(bbox: BoundingBox) -> nx.MultiDiGraph:
     if width < 0.0001 or height < 0.0001:
         raise HTTPException(status_code=400, detail="Selected area is too small. Please draw a larger area.")
 
+    # Check if area is too large (max ~5km x 5km = 25 km²)
+    # 1 degree latitude ≈ 111 km, 1 degree longitude ≈ 85 km at mid-latitudes
+    MAX_DEGREES = 0.05  # ~5 km
+    if width > MAX_DEGREES or height > MAX_DEGREES:
+        width_km = width * 85  # Approximate
+        height_km = height * 111
+        raise HTTPException(
+            status_code=400,
+            detail=f"Selected area is too large ({width_km:.1f} x {height_km:.1f} km). "
+                   f"Maximum area is approximately 5 x 5 km. Please select a smaller neighborhood."
+        )
+
     try:
         # Download the drive network using osmnx
         # Note: osmnx 1.x uses bbox parameter as tuple (north, south, east, west)

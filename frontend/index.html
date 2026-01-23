@@ -547,11 +547,12 @@
                         <h3>Instructions</h3>
                         <div class="instructions">
                             <ol>
-                                <li>Draw a <strong>rectangle</strong> or <strong>polygon</strong> on the map</li>
+                                <li>Draw a <strong>rectangle</strong> or <strong>polygon</strong> on the map (max ~5x5 km)</li>
                                 <li>Click <strong>"Plan Route"</strong> to generate the search path</li>
                                 <li>Click <strong>"Start Tracking"</strong> to record your progress</li>
                                 <li>Streets turn green as you drive them</li>
                             </ol>
+                            <p style="margin-top:10px;color:#f39c12;font-size:0.8rem;">Tip: Start with a small neighborhood area for faster processing.</p>
                         </div>
                     </div>
 
@@ -755,10 +756,23 @@
                 west: bounds.getWest()
             };
 
-            const areaType = event.layerType === 'polygon' ? 'Polygon' : 'Rectangle';
-            updateCoordDisplay(`${areaType} Area:\nN: ${currentBounds.north.toFixed(6)}\nS: ${currentBounds.south.toFixed(6)}\nE: ${currentBounds.east.toFixed(6)}\nW: ${currentBounds.west.toFixed(6)}`);
+            // Calculate approximate area size in km
+            const widthDeg = currentBounds.east - currentBounds.west;
+            const heightDeg = currentBounds.north - currentBounds.south;
+            const widthKm = (widthDeg * 85).toFixed(1);  // ~85 km per degree longitude at mid-latitudes
+            const heightKm = (heightDeg * 111).toFixed(1);  // ~111 km per degree latitude
 
-            document.getElementById('generateBtn').disabled = false;
+            const areaType = event.layerType === 'polygon' ? 'Polygon' : 'Rectangle';
+            let sizeWarning = '';
+            const MAX_DEG = 0.05;  // ~5 km
+            if (widthDeg > MAX_DEG || heightDeg > MAX_DEG) {
+                sizeWarning = '\n⚠️ Area too large! Max ~5x5 km';
+                showNotification('Area too large! Please draw a smaller area (max ~5x5 km)', 'error');
+            }
+
+            updateCoordDisplay(`${areaType} Area: ~${widthKm} x ${heightKm} km${sizeWarning}`);
+
+            document.getElementById('generateBtn').disabled = (widthDeg > MAX_DEG || heightDeg > MAX_DEG);
             document.getElementById('areaPanel').style.display = 'block';
             document.getElementById('statsPanel').style.display = 'none';
             document.getElementById('trackingBtn').disabled = true;
