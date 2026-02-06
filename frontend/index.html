@@ -664,6 +664,7 @@
 
         let map, drawnItems, routeLayer, segmentsLayer, userMarker;
         let currentBounds = null;
+        let currentPolygon = null;
         let currentRoute = null;
         let segments = [];
         let directions = [];
@@ -755,6 +756,13 @@
                 east: bounds.getEast(),
                 west: bounds.getWest()
             };
+            if (event.layerType === 'polygon') {
+                const latlngs = layer.getLatLngs();
+                const ring = Array.isArray(latlngs) && latlngs.length > 0 ? latlngs[0] : [];
+                currentPolygon = ring.map(ll => [ll.lng, ll.lat]);
+            } else {
+                currentPolygon = null;
+            }
 
             // Calculate approximate area size in km
             const widthDeg = currentBounds.east - currentBounds.west;
@@ -782,6 +790,7 @@
 
         function handleDrawDeleted() {
             currentBounds = null;
+            currentPolygon = null;
             currentRoute = null;
             segments = [];
             directions = [];
@@ -808,10 +817,14 @@
             setLoading(true, 'Downloading street network...');
 
             try {
+                const requestBody = (currentPolygon && currentPolygon.length >= 3)
+                    ? { polygon: { coordinates: currentPolygon } }
+                    : { bbox: currentBounds };
+
                 const response = await fetch(`${API_BASE_URL}/generate-route`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bbox: currentBounds })
+                    body: JSON.stringify(requestBody)
                 });
 
                 const data = await response.json();
@@ -894,7 +907,10 @@
                 });
 
                 line.segmentId = seg.id;
-                line.on('click', () => highlightDirection(idx));
+                line.on('click', () => {
+                    const dirIndex = getDirectionIndexForSegmentId(seg.id);
+                    highlightDirection(dirIndex);
+                });
                 segmentsLayer.addLayer(line);
             });
         }
@@ -910,6 +926,25 @@
         // ============================================
         // Directions
         // ============================================
+        function getDirectionIndexForSegmentId(segmentId) {
+            if (!directions || directions.length === 0) return null;
+            for (let i = directions.length - 1; i >= 0; i--) {
+                if (segmentId >= directions[i].segment_id) {
+                    return i;
+                }
+            }
+            return null;
+        }
+
+        function getDirectionSegmentRange(dirIdx) {
+            if (!directions || !directions[dirIdx]) return null;
+            const start = directions[dirIdx].segment_id;
+            const end = (dirIdx + 1 < directions.length)
+                ? directions[dirIdx + 1].segment_id - 1
+                : segments.length - 1;
+            return { start, end };
+        }
+
         function updateDirectionsList() {
             const container = document.getElementById('directionsList');
 
@@ -941,11 +976,14 @@
         }
 
         function isDirectionSearched(dirIdx) {
-            // A direction is searched if its first segment is searched
-            const dir = directions[dirIdx];
-            if (!dir) return false;
-            const seg = segments.find(s => s.id === dir.segment_id);
-            return seg ? seg.searched : false;
+            // A direction is searched once all its segments are searched
+            const range = getDirectionSegmentRange(dirIdx);
+            if (!range || range.start < 0 || range.end < range.start) return false;
+            for (let i = range.start; i <= range.end; i++) {
+                const seg = segments[i];
+                if (!seg || !seg.searched) return false;
+            }
+            return true;
         }
 
         function focusDirection(idx) {
@@ -960,7 +998,7 @@
 
         function highlightDirection(idx) {
             document.querySelectorAll('.direction-item').forEach((el, i) => {
-                el.classList.toggle('current', i === idx);
+                el.classList.toggle('current', idx !== null && i === idx);
             });
         }
 
@@ -1210,6 +1248,7 @@
             segmentsLayer.clearLayers();
             if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
             currentBounds = null;
+            currentPolygon = null;
             currentRoute = null;
             segments = [];
             directions = [];

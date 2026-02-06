@@ -127,13 +127,24 @@ def download_street_network(bbox: BoundingBox) -> nx.MultiDiGraph:
 
     try:
         # Download the drive network using osmnx
-        # Note: osmnx 1.x uses bbox parameter as tuple (north, south, east, west)
-        G = ox.graph_from_bbox(
-            bbox=(bbox.north, bbox.south, bbox.east, bbox.west),
-            network_type='drive',
-            simplify=True,
-            truncate_by_edge=True
-        )
+        # OSMnx 2.x accepts bbox tuple; 1.x expects north/south/east/west args.
+        try:
+            G = ox.graph_from_bbox(
+                bbox=(bbox.north, bbox.south, bbox.east, bbox.west),
+                network_type='drive',
+                simplify=True,
+                truncate_by_edge=True
+            )
+        except TypeError:
+            G = ox.graph_from_bbox(
+                bbox.north,
+                bbox.south,
+                bbox.east,
+                bbox.west,
+                network_type='drive',
+                simplify=True,
+                truncate_by_edge=True
+            )
 
         logger.info(f"Downloaded graph with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
         return G
@@ -334,12 +345,21 @@ def minimum_weight_matching(odd_nodes: List[int], paths: Dict[Tuple[int, int], T
         if dist < float('inf'):
             complete_graph.add_edge(u, v, weight=dist)
 
+    expected_pairs = len(odd_nodes) // 2
+
     # Use NetworkX's min_weight_matching
-    # Note: This finds a minimum weight maximal matching
+    # Note: default is a minimum weight maximal matching, so request max cardinality.
     try:
-        matching = nx.min_weight_matching(complete_graph)
-        logger.info(f"Found matching with {len(matching)} pairs")
-        return list(matching)
+        matching = nx.min_weight_matching(complete_graph, maxcardinality=True, weight="weight")
+        matching_list = list(matching)
+        logger.info(f"Found matching with {len(matching_list)} pairs")
+        if len(matching_list) != expected_pairs:
+            logger.warning(
+                f"Matching incomplete ({len(matching_list)}/{expected_pairs}); "
+                "falling back to greedy matching"
+            )
+            return greedy_matching(odd_nodes, paths)
+        return matching_list
     except Exception as e:
         logger.warning(f"Min weight matching failed: {e}, using greedy approach")
         # Fallback to greedy matching
@@ -364,6 +384,8 @@ def greedy_matching(odd_nodes: List[int], paths: Dict[Tuple[int, int], Tuple[flo
     sorted_edges = sorted(paths.items(), key=lambda x: x[1][0])
 
     for (u, v), (dist, _) in sorted_edges:
+        if dist == float('inf'):
+            continue
         if u in remaining and v in remaining:
             matching.append((u, v))
             remaining.remove(u)
@@ -371,6 +393,9 @@ def greedy_matching(odd_nodes: List[int], paths: Dict[Tuple[int, int], Tuple[flo
 
         if len(remaining) == 0:
             break
+
+    if remaining:
+        logger.warning(f"Greedy matching left {len(remaining)} unmatched odd nodes")
 
     return matching
 
@@ -416,6 +441,12 @@ def eulerize_graph(G: nx.MultiGraph) -> Tuple[nx.MultiGraph, int]:
 
     # Find minimum weight matching
     matching = minimum_weight_matching(odd_nodes, paths)
+    expected_pairs = len(odd_nodes) // 2
+    if len(matching) != expected_pairs:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not compute matching for all odd-degree nodes; graph may be disconnected"
+        )
 
     # Add duplicate edges along matched paths
     edges_added = 0
