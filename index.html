@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Street Coverage Planner</title>
+    <link rel="stylesheet" href="styles.css">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/leaflet/dist/leaflet.css"
+    >
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/leaflet-draw/dist/leaflet.draw.css"
+    >
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Missing Person Search</p>
+          <h1>Street Coverage Planner</h1>
+          <p class="subtitle">
+            Define a search area and generate a route that maximizes street
+            coverage.
+          </p>
+        </div>
+        <div class="header-chip">Mobile-first</div>
+      </header>
+      <div class="main">
+        <div id="map" aria-label="Map with search area"></div>
+        <section class="panel" aria-labelledby="panel-title">
+          <h2 id="panel-title">Search Plan</h2>
+
+          <div class="panel-section">
+            <h3>1. Define the area</h3>
+            <p>
+              Tap "Draw area" and trace the boundary. Double tap to finish.
+            </p>
+            <button id="draw-area" class="btn primary">Draw area</button>
+          </div>
+
+          <div class="panel-section">
+            <h3>2. Plan coverage</h3>
+            <label class="field">
+              <span>Coverage spacing</span>
+              <div class="range-row">
+                <input
+                  id="coverage-spacing"
+                  type="range"
+                  min="50"
+                  max="250"
+                  step="10"
+                  value="120"
+                >
+                <span id="spacing-value">120 m</span>
+              </div>
+            </label>
+            <label class="field">
+              <span>Search mode</span>
+              <select id="search-mode">
+                <option value="4">On foot (4 km/h)</option>
+                <option value="12">Bike or ATV (12 km/h)</option>
+                <option value="25">Vehicle (25 km/h)</option>
+              </select>
+            </label>
+            <div class="button-row">
+              <button id="plan-route" class="btn">Plan coverage route</button>
+              <button id="clear-plan" class="btn ghost">Reset</button>
+            </div>
+            <p class="note">
+              Routes are generated for full-area sweeps and may require local
+              judgement on the street network.
+            </p>
+          </div>
+
+          <div class="panel-section" id="directions">
+            <h3>3. Directions</h3>
+            <button id="start-directions" class="btn primary">
+              Start directions
+            </button>
+            <div class="summary">
+              <div>
+                <span class="label">Total distance</span>
+                <strong id="total-distance">--</strong>
+              </div>
+              <div>
+                <span class="label">Estimated time</span>
+                <strong id="estimated-time">--</strong>
+              </div>
+            </div>
+            <ol id="directions-list" class="directions-list">
+              <li>Plan a coverage route to see turn-by-turn steps.</li>
+            </ol>
+          </div>
+
+          <div id="status" class="status" role="status" aria-live="polite">
+            Ready. Draw a search area to begin.
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-draw/dist/leaflet.draw.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf/turf.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
