@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import Map, { MapRef } from "react-map-gl";
+import Map, { MapRef } from "react-map-gl/mapbox";
 
 const DEFAULT_VIEW_STATE = {
   longitude: -98.5795,
